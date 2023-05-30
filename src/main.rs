@@ -44,7 +44,7 @@ async fn run_me() -> Result<()> {
     .init();
 
     info!("runing...");
-    
+
     let args = CmdArgs::parse();
 
     if let Some(ping) = args.ping.as_ref() {
@@ -110,25 +110,26 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
 }
 
 async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
-    update_one(cli, domain, rr, true).await;
+    let mut first_ok = false;
 
     loop {
-        update_one(cli, domain, rr, false).await;
+        update_one(cli, domain, rr, &mut first_ok).await;
         tokio::time::sleep(Duration::from_millis(60*1000)).await;
     }
 }
 
-async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, first: bool ) {
+async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, first_ok: &mut bool ) {
     let r = update_aliyun_ddns(cli, domain, rr).await;
     match r {
         Ok((my_ip, updated)) => {
             if updated {
                 info!("update domain record [{}] -> [{}]", rr, my_ip);
             } else {
-                if first {
+                if !(*first_ok) {
                     info!("exist domain record [{}] = [{}]", rr, my_ip);
                 }
             }
+            *first_ok = true;
         },
         Err(e) => {
             warn!("update but [{:?}]", e);
