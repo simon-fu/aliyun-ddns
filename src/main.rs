@@ -18,18 +18,22 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
+    let r = run_me().await;
+    println!("final: [{:?}]", r);
+    r
+}
+
+async fn run_me() -> Result<()> {
+// const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
     // const REGION: &str = "cn-hangzhou";
     // const DOMAIN: &str = "rtcsdk.com";
     // const RR: &str = "simon.home";
-
-    let args = CmdArgs::parse();
 
     // %m-%d %H:%M:%S%.3f
     let timer = tracing_subscriber::fmt::time::LocalTime::new(
         format_description!("[month]-[day]T[hour]:[minute]:[second]")
     );
-    
+
     tracing_subscriber::fmt::fmt()
     .with_timer(timer)
     .with_env_filter(
@@ -38,6 +42,10 @@ async fn main() -> Result<()> {
         .from_env_lossy()
     )
     .init();
+
+    info!("runing...");
+    
+    let args = CmdArgs::parse();
 
     if let Some(ping) = args.ping.as_ref() {
         kick_ping(ping).await?;
