@@ -1,8 +1,10 @@
 
-use std::time::Duration;
-use anyhow::{Result, Context};
+use std::{time::Duration, net::SocketAddr, borrow::Cow};
+use anyhow::{Result, Context, bail};
 use clap::Parser;
+use reqwest::Url;
 use time::macros::format_description;
+use tokio::{net::UdpSocket, task::JoinHandle};
 use tracing::{info, debug, warn, Instrument, metadata::LevelFilter};
 
 pub mod aliyun_cli;
@@ -11,9 +13,8 @@ use aliyun_cli::AliyunCli;
 pub mod get_my_ip;
 use get_my_ip::get_my_ip;
 use tracing_subscriber::EnvFilter;
-// use tracing_subscriber::fmt::time;
-// use tracing_subscriber::EnvFilter;
 
+// cargo run -- --domain rtcsdk.com --rr simon.home --cli "/Users/simon/simon/myhome/mini/aliyun/aliyun" --ping "udp://39.105.43.146:5000?line=aaa"
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,6 +39,9 @@ async fn main() -> Result<()> {
     )
     .init();
 
+    if let Some(ping) = args.ping.as_ref() {
+        kick_ping(ping).await?;
+    }
 
     let cli = AliyunCli::new(
         args.cli.clone(), // ALIYUN_CLI.into(), 
@@ -54,9 +58,47 @@ async fn main() -> Result<()> {
 
     }.instrument(tracing::info_span!("update")));
 
+
     h1.await?;
 
     Ok(())
+}
+
+async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
+    let url: Url = Url::parse(ping).with_context(||"invalid ping url")?;
+    if url.scheme() != "udp" {
+        bail!("only support udp ping")
+    }
+
+    let addr = format!(
+        "{}:{}", 
+        url.host_str().with_context(||"expect ping host")?, 
+        url.port().with_context(||"expect ping port")?,
+    );
+
+    let target: SocketAddr = addr.parse().with_context(||"invalid ping addr")?;
+
+    let socket = UdpSocket::bind("0.0.0.0:0").await
+    .with_context(||"fail to bind udp")?;
+
+    let line = url.query_pairs()
+    .find(|x|x.0 == "line")
+    .map(|x|x.1)
+    .unwrap_or(Cow::Borrowed("hello ddns"));
+
+    let line = format!("{}\r\n", line);
+
+    let h = tokio::spawn(async move {
+        loop {
+            let r = socket.send_to(line.as_bytes(), target).await;
+            if let Err(e) = r {
+                warn!("ping fail [{:?}]", e);
+            }
+            tokio::time::sleep(Duration::from_millis(60*1000)).await;
+        }
+        
+    }.instrument(tracing::info_span!("ping")));
+    Ok(h)
 }
 
 async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
@@ -124,6 +166,11 @@ pub struct CmdArgs {
 
     #[clap(long = "rr", long_help = "for example: www")]
     pub rr: String,
+
+
+    #[clap(long = "ping", long_help = "target url to ping, for example: udp://127.0.0.1:5000?line=abc")]
+    pub ping: Option<String>,
+
 }
 
 
