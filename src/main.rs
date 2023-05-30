@@ -102,27 +102,29 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
 }
 
 async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
-    let (my_ip, updated) = update_aliyun_ddns(cli, domain, rr).await?;
-    if updated {
-        info!("update domain record [{}] -> [{}]", rr, my_ip);
-    } else {
-        info!("exist domain record [{}] = [{}]", rr, my_ip);
-    }
+    update_one(cli, domain, rr, true).await;
 
     loop {
-        let r = update_aliyun_ddns(cli, domain, rr).await;
-        match r {
-            Ok((my_ip, updated)) => {
-                if updated {
-                    info!("update domain record [{}] -> [{}]", rr, my_ip);
-                }
-            },
-            Err(e) => {
-                warn!("update but [{:?}]", e);
-            },
-        }
-
+        update_one(cli, domain, rr, false).await;
         tokio::time::sleep(Duration::from_millis(60*1000)).await;
+    }
+}
+
+async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, first: bool ) {
+    let r = update_aliyun_ddns(cli, domain, rr).await;
+    match r {
+        Ok((my_ip, updated)) => {
+            if updated {
+                info!("update domain record [{}] -> [{}]", rr, my_ip);
+            } else {
+                if first {
+                    info!("exist domain record [{}] = [{}]", rr, my_ip);
+                }
+            }
+        },
+        Err(e) => {
+            warn!("update but [{:?}]", e);
+        },
     }
 }
 
