@@ -1,6 +1,7 @@
 
 use std::time::Duration;
 use anyhow::{Result, Context};
+use clap::Parser;
 use time::macros::format_description;
 use tracing::{info, debug, warn, Instrument, metadata::LevelFilter};
 
@@ -16,10 +17,12 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
-    const REGION: &str = "cn-hangzhou";
-    const DOMAIN: &str = "rtcsdk.com";
-    const RR: &str = "simon.home";
+    // const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
+    // const REGION: &str = "cn-hangzhou";
+    // const DOMAIN: &str = "rtcsdk.com";
+    // const RR: &str = "simon.home";
+
+    let args = CmdArgs::parse();
 
     // %m-%d %H:%M:%S%.3f
     let timer = tracing_subscriber::fmt::time::LocalTime::new(
@@ -37,8 +40,8 @@ async fn main() -> Result<()> {
 
 
     let cli = AliyunCli::new(
-        ALIYUN_CLI.into(), 
-        REGION.into(),
+        args.cli.clone(), // ALIYUN_CLI.into(), 
+        args.region.clone(), // REGION.into(),
     );
 
     // ./aliyun alidns UpdateDomainRecord --region cn-hangzhou --RecordId 831569755440133120 --RR 'simon.home' --Type A --Value '114.249.210.247'
@@ -46,7 +49,7 @@ async fn main() -> Result<()> {
 
     let h1 = tokio::spawn(async move {
 
-        let r = run_update(&cli, DOMAIN, RR).await;
+        let r = run_update(&cli, &args.domain, &args.rr).await;
         info!("run result [{:?}]", r);
 
     }.instrument(tracing::info_span!("update")));
@@ -102,6 +105,25 @@ async fn update_aliyun_ddns(cli: &AliyunCli, domain: &str, rr: &str) -> Result<(
     } else {
         return Ok((my_ip, false))
     }
+}
+
+
+
+#[derive(Parser, Debug)]
+#[clap(name = "aliyun-ddns", author, version, about = "update domain record")]
+pub struct CmdArgs {
+
+    #[clap(long = "cli", long_help = "aliyun cli path", default_value = "aliyun")]
+    pub cli: String,
+
+    #[clap(long = "region", long_help = "aliyun region", default_value="cn-hangzhou")]
+    pub region: String,
+
+    #[clap(long = "domain", long_help = "target domain")]
+    pub domain: String,
+
+    #[clap(long = "rr", long_help = "for example: www")]
+    pub rr: String,
 }
 
 
