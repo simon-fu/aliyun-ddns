@@ -1,4 +1,43 @@
 
+/*
+- 阿里云官网添加 DNS 记录
+    - 主机记录 dev.test，记录类型 A，记录值 127.0.0.1
+
+- 阿里云官网生成 AccessKey
+    - RAM 访问控制 -> 用户 -> 创建用户 -> 勾选 OpenAPI 调用访问启用
+    - RAM 访问控制 -> 用户 -> 点击用户名 -> 认证管理 -> 创建 AccessKey -> 复制保存 AccessKeyId 和 AccessKeySecret
+    - RAM 访问控制 -> 授权 -> 给用户添加权限 AliyunDNSFullAccess
+
+- 下载 aliyun cli，本地配置 AccessKey， 
+    参考 https://help.aliyun.com/document_detail/110341.html?spm=a2c4g.121259.0.0.56ee4007veBBj5
+    aliyun configure set \
+        --profile akProfile \
+        --mode AK \
+        --region cn-hangzhou \
+        --access-key-id AccessKeyId \
+        --access-key-secret AccessKeySecret
+
+- 测试 aliyun cli
+    - ./aliyun alidns DescribeDomainRecords --region cn-hangzhou --DomainName 'rtcsdk.com'
+      找到 dev.test 对应 RecordId
+
+    - ./aliyun alidns UpdateDomainRecord --region cn-hangzhou --RecordId 831868602766839808 --RR 'dev.test' --Type A --Value '127.0.0.2'
+
+    - ping dev.test.rtcsdk.com ， 看是否已经改成 127.0.0.2
+    
+
+- 运行本程序
+    - cargo run -- --domain rtcsdk.com --rr dev.test --cli "/Users/simon/simon/myhome/mini/aliyun/aliyun"
+        - curl jsonip.com 得到外网地址
+        - ping dev.test.rtcsdk.com ， 看是否已经改成外网地址
+
+    - cargo run -- --domain rtcsdk.com --rr dev.test --cli "/Users/simon/simon/myhome/mini/aliyun/aliyun" --ping "udp://39.105.43.146:5000?line=hello-ddns"
+      - ping 是向一个服务器周期发 udp 包，line是发送内容
+      - 在服务器上运行 nc -v -l -p 5000  可得到公网地址，这个命令只有效一次，每次都要重新运行
+
+*/
+
+
 use std::{time::Duration, net::SocketAddr, borrow::Cow};
 use anyhow::{Result, Context, bail};
 use clap::Parser;
@@ -14,7 +53,7 @@ pub mod get_my_ip;
 use get_my_ip::get_my_ip;
 use tracing_subscriber::EnvFilter;
 
-// cargo run -- --domain rtcsdk.com --rr simon.home --cli "/Users/simon/simon/myhome/mini/aliyun/aliyun" --ping "udp://39.105.43.146:5000?line=aaa"
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +66,7 @@ async fn run_me() -> Result<()> {
 // const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
     // const REGION: &str = "cn-hangzhou";
     // const DOMAIN: &str = "rtcsdk.com";
-    // const RR: &str = "simon.home";
+    // const RR: &str = "dev.test";
 
     // %m-%d %H:%M:%S%.3f
     let timer = tracing_subscriber::fmt::time::LocalTime::new(
@@ -56,8 +95,7 @@ async fn run_me() -> Result<()> {
         args.region.clone(), // REGION.into(),
     );
 
-    // ./aliyun alidns UpdateDomainRecord --region cn-hangzhou --RecordId 831569755440133120 --RR 'simon.home' --Type A --Value '114.249.210.247'
-    // cli.update_domain_record_a("831569755440133120", RR, "114.249.210.247").await?;
+    // cli.update_domain_record_a("831868602766839808", RR, "127.0.0.1").await?;
 
     let h1 = tokio::spawn(async move {
 
@@ -110,29 +148,30 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
 }
 
 async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
-    let mut first_ok = false;
+    let mut last_ok = false;
 
     loop {
-        update_one(cli, domain, rr, &mut first_ok).await;
+        update_one(cli, domain, rr, &mut last_ok).await;
         tokio::time::sleep(Duration::from_millis(60*1000)).await;
     }
 }
 
-async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, first_ok: &mut bool ) {
+async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, last_ok: &mut bool ) {
     let r = update_aliyun_ddns(cli, domain, rr).await;
     match r {
         Ok((my_ip, updated)) => {
             if updated {
                 info!("update domain record [{}] -> [{}]", rr, my_ip);
             } else {
-                if !(*first_ok) {
+                if !(*last_ok) {
                     info!("exist domain record [{}] = [{}]", rr, my_ip);
                 }
             }
-            *first_ok = true;
+            *last_ok = true;
         },
         Err(e) => {
             warn!("update but [{:?}]", e);
+            *last_ok = false;
         },
     }
 }
