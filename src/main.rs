@@ -1,19 +1,20 @@
 
-use std::{time::Duration, net::SocketAddr, borrow::Cow};
+use std::{time::Duration, borrow::Cow};
 use anyhow::{Result, Context, bail};
 use clap::Parser;
 use reqwest::Url;
-use time::macros::format_description;
+// use time::macros::format_description;
 use tokio::{net::UdpSocket, task::JoinHandle};
-use tracing::{info, debug, warn, Instrument, metadata::LevelFilter};
+use tracing::{info, debug, warn, Instrument};
 
 pub mod aliyun_cli;
 use aliyun_cli::AliyunCli;
 
 pub mod get_my_ip;
 use get_my_ip::get_my_ip;
-use tracing_subscriber::EnvFilter;
+// use tracing_subscriber::EnvFilter;
 
+mod log;
 
 
 #[tokio::main]
@@ -25,24 +26,26 @@ async fn main() -> Result<()> {
 
 async fn run_me() -> Result<()> {
 // const ALIYUN_CLI: &str = "/Users/simon/simon/myhome/mini/aliyun/aliyun";
-    // const REGION: &str = "cn-hangzhou";
-    // const DOMAIN: &str = "rtcsdk.com";
-    // const RR: &str = "dev.test";
+    // // const REGION: &str = "cn-hangzhou";
+    // // const DOMAIN: &str = "rtcsdk.com";
+    // // const RR: &str = "dev.test";
 
-    // %m-%d %H:%M:%S%.3f
-    let timer = tracing_subscriber::fmt::time::LocalTime::new(
-        format_description!("[month]-[day]T[hour]:[minute]:[second]")
-    );
+    // // %m-%d %H:%M:%S%.3f
+    // let timer = tracing_subscriber::fmt::time::LocalTime::new(
+    //     // https://time-rs.github.io/book/api/format-description.html
+    //     format_description!("[month]-[day]T[hour]:[minute]:[second]")
+    // );
 
-    tracing_subscriber::fmt::fmt()
-    .with_timer(timer)
-    .with_env_filter(
-        EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy()
-    )
-    .init();
+    // tracing_subscriber::fmt::fmt()
+    // .with_timer(timer)
+    // .with_env_filter(
+    //     EnvFilter::builder()
+    //     .with_default_directive(LevelFilter::INFO.into())
+    //     .from_env_lossy()
+    // )
+    // .init();
 
+    let _gurad = init_log!()?;
     info!("runing...");
 
     let args = CmdArgs::parse();
@@ -83,7 +86,8 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
         url.port().with_context(||"expect ping port")?,
     );
 
-    let target: SocketAddr = addr.parse().with_context(||"invalid ping addr")?;
+    // let target: SocketAddr = addr.parse().with_context(|| format!("invalid ping addr [{}]", addr))?;
+    let target = addr;
 
     let socket = UdpSocket::bind("0.0.0.0:0").await
     .with_context(||"fail to bind udp")?;
@@ -93,15 +97,18 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
     .map(|x|x.1)
     .unwrap_or(Cow::Borrowed("hello ddns"));
 
+    let ping_interval = Duration::from_millis(60*1000);
     let line = format!("{}\r\n", line);
+    info!("udp ping: target [{target}], interval [{ping_interval:?}]");
 
     let h = tokio::spawn(async move {
         loop {
-            let r = socket.send_to(line.as_bytes(), target).await;
+            let r = socket.send_to(line.as_bytes(), &target).await;
             if let Err(e) = r {
                 warn!("ping fail [{:?}]", e);
             }
-            tokio::time::sleep(Duration::from_millis(60*1000)).await;
+            tokio::time::sleep(ping_interval).await;
+            debug!("try ping: target [{target}], interval [{ping_interval:?}]");
         }
         
     }.instrument(tracing::info_span!("ping")));
@@ -109,11 +116,13 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
 }
 
 async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
+    let interval = Duration::from_millis(60*1000);
     let mut last_ok = false;
-
+    info!("try update domain: [{domain}], rr [{rr}], interval [{interval:?}]");
     loop {
         update_one(cli, domain, rr, &mut last_ok).await;
-        tokio::time::sleep(Duration::from_millis(60*1000)).await;
+        tokio::time::sleep(interval).await;
+        debug!("try update domain: [{domain}], rr [{rr}], interval [{interval:?}]");
     }
 }
 
