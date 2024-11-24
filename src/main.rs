@@ -115,14 +115,17 @@ async fn kick_ping(ping: &str) -> Result<JoinHandle<()>> {
     Ok(h)
 }
 
-async fn run_update(cli: &AliyunCli, domain: &str, rr: &str) -> Result<()> {
+async fn run_update(cli: &AliyunCli, domains: &[String], rr: &str) -> Result<()> {
     let interval = Duration::from_millis(60*1000);
-    let mut last_ok = false;
-    info!("try update domain: [{domain}], rr [{rr}], interval [{interval:?}]");
+    let mut last_ok: Vec<bool> = domains.iter().map(|_x|false).collect();
+    info!("run update domains: [{domains:?}], rr [{rr}], interval [{interval:?}]");
     loop {
-        update_one(cli, domain, rr, &mut last_ok).await;
+        for (index, domain) in domains.iter().enumerate() {
+            debug!("try update domain: [{domain}], rr [{rr}], interval [{interval:?}]");
+            update_one(cli, domain, rr, &mut last_ok[index]).await;
+        }
         tokio::time::sleep(interval).await;
-        debug!("try update domain: [{domain}], rr [{rr}], interval [{interval:?}]");
+        
     }
 }
 
@@ -131,10 +134,10 @@ async fn update_one(cli: &AliyunCli, domain: &str, rr: &str, last_ok: &mut bool 
     match r {
         Ok((my_ip, updated)) => {
             if updated {
-                info!("update domain record [{}] -> [{}]", rr, my_ip);
+                info!("update record [{rr}.{domain}] -> [{my_ip}]");
             } else {
                 if !(*last_ok) {
-                    info!("exist domain record [{}] = [{}]", rr, my_ip);
+                    info!("exist record [{rr}.{domain}] = [{my_ip}]");
                 }
             }
             *last_ok = true;
@@ -181,8 +184,8 @@ pub struct CmdArgs {
     #[clap(long = "region", long_help = "aliyun region", default_value="cn-hangzhou")]
     pub region: String,
 
-    #[clap(long = "domain", long_help = "target domain")]
-    pub domain: String,
+    #[clap(long = "domain", long_help = "target domain", required = true)]
+    pub domain: Vec<String>,
 
     #[clap(long = "rr", long_help = "for example: www")]
     pub rr: String,

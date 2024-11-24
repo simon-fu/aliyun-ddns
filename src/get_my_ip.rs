@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use anyhow::Result;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 
 pub async fn get_my_ip() -> Result<String> {

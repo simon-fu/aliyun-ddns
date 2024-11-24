@@ -2,7 +2,7 @@
 
 use anyhow::{Result, bail, Context};
 use serde::Deserialize;
-use serde_derive::Deserialize;
+// use serde_derive::Deserialize;
 use tracing::debug;
 
 pub struct AliyunCli {
